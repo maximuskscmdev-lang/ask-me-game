@@ -33,14 +33,32 @@ function esc(s) {
 }
 
 function connectSocket(done) {
+  if (location.protocol === 'https:' && SERVER_URL && !/^https:\/\//i.test(SERVER_URL)) {
+    return done(null, 'Game server URL must use https:// when this page is served over https (browsers block mixed content).');
+  }
   if (typeof window.io === 'function') return done(window.io(SERVER_URL, SOCKET_OPTS));
-  if (!SERVER_URL) return done(null);
+  if (!SERVER_URL) {
+    return done(null, 'No game server configured. Set window.ASKME_SERVER_URL in config.js to your deployed server URL.');
+  }
   const s = document.createElement('script');
   s.src = `${SERVER_URL}/socket.io/socket.io.js`;
   s.onload = () => done(window.io(SERVER_URL, SOCKET_OPTS));
-  s.onerror = () => done(null);
+  s.onerror = () => done(null, `Could not reach the game server at ${SERVER_URL}. Is it deployed and awake?`);
   document.head.appendChild(s);
 }
+
+connectSocket((socket, err) => {
+  App.socket = socket;
+  if (socket) {
+    wireSocket();
+  } else {
+    const msg = err || 'Could not load the game client.';
+    document.addEventListener('DOMContentLoaded', () => {
+      showHomeError(msg);
+      toast(msg);
+    });
+  }
+});
 
 function showScreen(name) {
   ['home', 'lobby', 'game', 'summary'].forEach((s) => {

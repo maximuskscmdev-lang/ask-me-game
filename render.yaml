@@ -1,0 +1,10 @@
+# One-click deploy config for the Ask Me game server (Render).
+# Vercel hosts the static UI; this long-running Node process hosts Socket.io.
+services:
+  - type: web
+    name: ask-me-game-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
