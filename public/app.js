@@ -39,7 +39,7 @@ function emit(event, payload) {
     setNetStatus('offline');
     return false;
   }
-  emit(event, payload);
+  App.socket.emit(event, payload);
   return true;
 }
 

@@ -2,7 +2,7 @@
 const { chromium } = require('playwright-core');
 
 const EXEC = '/root/.cache/ms-playwright/chromium_headless_shell-1234/chrome-linux/headless_shell';
-const UI = 'https://ask-me-game-iota.vercel.app/';
+const UI = process.env.UI_URL || 'https://ask-me-game-iota.vercel.app/';
 
 (async () => {
   const browser = await chromium.launch({ executablePath: EXEC, args: ['--no-sandbox'] });

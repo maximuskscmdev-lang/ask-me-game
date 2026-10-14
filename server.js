@@ -47,6 +47,28 @@ function detach(socketId, leftVoluntarily) {
   }
 }
 
+/* re-attach an existing player (matched by nickname) to a new socket */
+function doRejoin(socket, room, name) {
+  const pendFor = [...pendingLeaves.entries()].find(([, pend]) => pend.room === room);
+  const p = room.players.find((pl) => pl.name.toLowerCase() === String(name).toLowerCase());
+  if (!p) {
+    return socket.emit('errorMsg', 'That nickname is not in this room. Pick the one you joined with.');
+  }
+  if (pendFor) {
+    clearTimeout(pendFor[1].timer);
+    pendingLeaves.delete(pendFor[0]);
+  }
+  const oldId = p.id;
+  p.id = socket.id;
+  p.connected = true;
+  socket.join(room.code);
+  bySocket.set(socket.id, room);
+  if (oldId !== socket.id) bySocket.delete(oldId);
+  room.emitToBoth('system', { text: `${p.name} reconnected!` });
+  socket.emit('joined', room.wide());
+  room.broadcast();
+}
+
 io.on('connection', (socket) => {
   // socket.io may reuse the same id when the session survives a short blip
   const reattachable = bySocket.get(socket.id);
@@ -86,8 +108,13 @@ io.on('connection', (socket) => {
 
     const room = rooms.get(String(code).toUpperCase());
     if (!room) return socket.emit('errorMsg', `Room ${String(code).toUpperCase()} not found.`);
-    if (room.players.length >= 2) return socket.emit('errorMsg', 'That room is full.');
-    if (room.phase !== 'lobby') return socket.emit('errorMsg', 'That game already started.');
+    if (room.players.length >= 2 && !room.players.some((p) => p.name.toLowerCase() === String(name).toLowerCase())) {
+      return socket.emit('errorMsg', 'That room is full.');
+    }
+    if (room.phase !== 'lobby' && !room.players.some((p) => p.name.toLowerCase() === String(name).toLowerCase())) {
+      return socket.emit('errorMsg', 'That game already started.');
+    }
+    if (room.players.length === 2 || room.phase !== 'lobby') return doRejoin(socket, room, name);
     if (room.players.some((p) => p.name.toLowerCase() === String(name).toLowerCase())) {
       return socket.emit('errorMsg', 'That nickname is already used in this room. Pick another.');
     }
@@ -99,26 +126,11 @@ io.on('connection', (socket) => {
     room.broadcast();
   });
 
-  // rejoin after a reconnect that got a new socket id
+  // rejoin after a reconnect that got a new socket id (also used by mid-game page reloads)
   socket.on('rejoin', ({ code, name }) => {
-    for (const [oldId, pend] of pendingLeaves) {
-      const room = pend.room;
-      if (room.code !== String(code).toUpperCase()) continue;
-      const p = room.players.find((pl) => pl.name.toLowerCase() === String(name).toLowerCase());
-      if (!p) continue;
-      clearTimeout(pend.timer);
-      pendingLeaves.delete(oldId);
-      p.id = socket.id;
-      p.connected = true;
-      socket.join(room.code);
-      bySocket.set(socket.id, room);
-      bySocket.delete(oldId);
-      room.emitToBoth('system', { text: `${p.name} reconnected!` });
-      socket.emit('joined', room.wide());
-      room.broadcast();
-      return;
-    }
-    socket.emit('errorMsg', 'Could not rejoin - the game may have ended. Reload the page to start fresh.');
+    const room = rooms.get(String(code).toUpperCase());
+    if (!room) return socket.emit('errorMsg', 'Could not rejoin - the game may have ended. Reload the page to start fresh.');
+    doRejoin(socket, room, name);
   });
 
   socket.on('lobbyOptions', (opts) => {
