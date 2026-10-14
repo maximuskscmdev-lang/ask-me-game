@@ -1,0 +1,16 @@
+{
+  "name": "ask-me-game",
+  "version": "1.0.0",
+  "description": "Two-player turn-based question game: join a room, ask, answer, like, dislike, reject",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}

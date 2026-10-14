@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ask Me - two-player question game</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">💬 Ask&nbsp;Me</div>
+    <div id="room-chip" class="hidden">
+      <span class="muted">Room</span>
+      <strong id="room-code-display"></strong>
+      <button id="copy-room" class="chip-btn" title="Copy room code">copy</button>
+      <button id="share-link" class="chip-btn" title="Copy invite link">invite link</button>
+    </div>
+  </header>
+
+  <!-- HOME -->
+  <section id="screen-home" class="screen">
+    <div class="card">
+      <h1>Ask Me</h1>
+      <p class="tagline">Join a room with a code, take turns asking and answering. Like it, dislike it, or reject the question entirely. Flirty, personal, or just for fun.</p>
+      <label for="name-input">Your nickname</label>
+      <input id="name-input" maxlength="14" placeholder="e.g. Luna" autocomplete="off" />
+      <label>Pick your avatar</label>
+      <div id="avatar-grid" class="avatar-grid"></div>
+      <button id="create-btn" class="btn primary">Create room</button>
+      <div class="divider"><span>or join with a code</span></div>
+      <div class="row">
+        <input id="join-code" class="code-input" maxlength="4" placeholder="ABCD" autocomplete="off" />
+        <button id="join-btn" class="btn secondary">Join</button>
+      </div>
+      <p id="home-error" class="error"></p>
+      <fieldset class="rules">
+        <legend>How it works</legend>
+        <ul>
+          <li>Players alternate: one asks a question, the other answers.</li>
+          <li>The answerer can like or dislike the question - or reject it to skip the round.</li>
+          <li>The asker then likes or dislikes the answer.</li>
+          <li>Every like scores 1 point. 10 rounds, then the winner is crowned!</li>
+        </ul>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="screen-lobby" class="screen hidden">
+    <div class="players" id="lobby-players"></div>
+    <div id="lobby-log" class="log"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Categories</h2>
+        <span class="muted">share at least one</span>
+      </div>
+      <p class="muted">Both players need at least one category in common. Enabling <strong>Adult 18+</strong> requires an age confirmation.</p>
+      <div id="category-list"></div>
+      <p id="lobby-error" class="error"></p>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Custom questions</h2>
+        <span class="count-pill" id="custom-count">0</span>
+      </div>
+      <p class="muted">Add your own questions - they go into a shared pool the asker can pick from too.</p>
+      <div class="row">
+        <input id="custom-input" maxlength="200" placeholder="Type your question..." autocomplete="off" />
+        <button id="custom-add" class="btn secondary">Add</button>
+      </div>
+      <div id="custom-list" class="custom-list"></div>
+    </div>
+    <div class="row">
+      <button id="start-btn" class="btn primary" disabled>Start game</button>
+      <button id="leave-room-btn" class="btn ghost">Leave</button>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="screen-game" class="screen hidden">
+    <div id="game-header" class="game-header"></div>
+    <div id="main-panel" class="card"></div>
+    <div id="log" class="log"></div>
+    <div class="card quick-add">
+      <div class="row">
+        <input id="custom-input-game" maxlength="200" placeholder="Add a custom question to the pool..." autocomplete="off" />
+        <button id="custom-add-game" class="btn secondary small">Add</button>
+      </div>
+    </div>
+    <div class="row center">
+      <button id="end-game-btn" class="btn ghost small">End game &amp; show results</button>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="screen-summary" class="screen hidden">
+    <div class="card" id="summary-card"></div>
+    <div class="row">
+      <button id="play-again-btn" class="btn primary">Play again</button>
+      <button id="leave-final-btn" class="btn ghost">Leave room</button>
+    </div>
+  </section>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="room.js"></script>
+</body>
+</html>
