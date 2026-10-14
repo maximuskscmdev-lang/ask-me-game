@@ -254,6 +254,56 @@ const stateOf = (c) => c.lastState;
   A.sock.close();
   B.sock.close();
 
+  // reconnection after a dropped socket (Render free-tier blips, mobile network switches)
+  const E = await mkClient('Eve', '🐙');
+  const F = await mkClient('Finn', '🦉');
+  E.sock.emit('join', { code: 'CREATE', name: E.name, avatar: E.avatar });
+  await wait(150);
+  const rcode = stateOf(E).code;
+  F.sock.emit('join', { code: rcode, name: F.name, avatar: F.avatar });
+  await wait(150);
+  E.sock.emit('lobbyOptions', { categories: ['general'] });
+  F.sock.emit('lobbyOptions', { categories: ['general'] });
+  await wait(150);
+  E.sock.emit('startGame');
+  await wait(150);
+  E.sock.emit('chooseCategory', 'general');
+  await wait(150);
+  const scoreBefore = stateOf(E).players.find((p) => p.name === 'Eve').score;
+
+  F.sock.close(); // Finn's connection drops mid-game
+  await wait(400);
+  check('dropped player stays in room during grace', stateOf(E).players.length === 2);
+  check('dropped player flagged reconnecting', stateOf(E).players.find((p) => p.name === 'Finn').connected === false);
+
+  // a fresh socket (new id) rejoins with the same nickname
+  const F2 = await mkClient('Finn', '🦉');
+  F2.sock.emit('rejoin', { code: rcode, name: 'Finn' });
+  await wait(250);
+  check('rejoin restores both players', stateOf(F2).players.length === 2);
+  check('rejoin clears the reconnecting flag', stateOf(F2).players.find((p) => p.name === 'Finn').connected === true);
+
+  // game continues exactly where it left off, with scores intact
+  F2.sock.emit('questionRating', 'like');
+  await wait(150);
+  check('rejoined answerer can still rate', stateOf(F2).phase === 'answer');
+  F2.sock.emit('submitAnswer', 'Back from the void.');
+  await wait(150);
+  check('rejoined answerer can still answer', stateOf(F2).answerText === 'Back from the void.');
+  E.sock.emit('answerRating', 'like');
+  await wait(150);
+  check('scores intact across reconnect', stateOf(F2).players.find((p) => p.name === 'Eve').score === scoreBefore + 1);
+
+  // rejoin into a room that never existed fails loudly
+  const G = await mkClient('Ghost', '👻');
+  G.sock.emit('rejoin', { code: 'ZZZZ', name: 'Ghost' });
+  await wait(150);
+  check('unknown rejoin reports an error', G.events.some((e) => e.startsWith('ERR:')));
+
+  E.sock.close();
+  F2.sock.close();
+  G.sock.close();
+
   console.log(results.join('\n'));
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
   process.exit(failures ? 1 : 0);

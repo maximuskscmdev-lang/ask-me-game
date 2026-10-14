@@ -29,6 +29,7 @@ class Room {
       rejected: p.rejected,
       categories: p.categories,
       confirmAdult: p.confirmAdult,
+      connected: p.connected !== false,
       ready: this.isReady(p),
     }));
   }
@@ -81,6 +82,7 @@ class Room {
       rejected: 0,
       categories: ['spicy', 'personal', 'general'],
       confirmAdult: false,
+      connected: true,
     });
     this.emitToBoth('system', { text: `${name} joined the room.` });
   }

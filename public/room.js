@@ -1,9 +1,22 @@
 /* Ask Me - room.js : game + summary rendering */
 
 const RoomUI = {
-  _sig: '',
-
   renderGame(prevPhase) {
+    try {
+      RoomUI._render(prevPhase);
+    } catch (e) {
+      console.error('renderGame failed:', e);
+      const panel = $('main-panel');
+      if (panel && !panel.querySelector('.render-error')) {
+        const err = document.createElement('p');
+        err.className = 'error render-error';
+        err.textContent = 'Display hiccup - if the screen stays stuck, reload the page.';
+        panel.prepend(err);
+      }
+    }
+  },
+
+  _render(prevPhase) {
     const s = App.state;
     if (!s) return;
     const me = myPlayer();
@@ -107,7 +120,7 @@ function renderGameHeader(s, me) {
     return `<div class="player ${isAsker ? 'active' : ''}">
       <div class="av">${esc(p.avatar)}</div>
       <div class="meta">
-        <span class="pname">${esc(p.name)}${isMe ? ' <span class="badge">you</span>' : ''}</span>
+        <span class="pname">${esc(p.name)}${isMe ? ' <span class="badge">you</span>' : ''}${p.connected ? '' : ' <span class="badge warn">reconnecting\u2026</span>'}</span>
         <span class="pscore">${p.score} \u2764\uFE0F \u00B7 ${p.answered} answered \u00B7 ${p.rejected} rejected</span>
       </div>
     </div>`;
@@ -210,27 +223,27 @@ function bindPanel() {
   const s = App.state;
 
   document.querySelectorAll('[data-cat]').forEach((b) => {
-    b.onclick = () => App.socket.emit('chooseCategory', b.dataset.cat);
+    b.onclick = () => emit('chooseCategory', b.dataset.cat);
   });
 
   document.querySelectorAll('[data-action]').forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.action;
-      if (a === 'like-question') App.socket.emit('questionRating', 'like');
-      if (a === 'dislike-question') App.socket.emit('questionRating', 'dislike');
-      if (a === 'reject-question') App.socket.emit('rejectQuestion');
+      if (a === 'like-question') emit('questionRating', 'like');
+      if (a === 'dislike-question') emit('questionRating', 'dislike');
+      if (a === 'reject-question') emit('rejectQuestion');
       if (a === 'submit-answer') {
         const v = $('answer-text') ? $('answer-text').value : '';
-        if (v.trim()) App.socket.emit('submitAnswer', v);
+        if (v.trim()) emit('submitAnswer', v);
         else toast('Write something first.');
       }
-      if (a === 'like-answer') App.socket.emit('answerRating', 'like');
-      if (a === 'dislike-answer') App.socket.emit('answerRating', 'dislike');
+      if (a === 'like-answer') emit('answerRating', 'like');
+      if (a === 'dislike-answer') emit('answerRating', 'dislike');
       if (a === 'ask-own') {
         const inp = $('own-question');
         const toPool = $('own-pool') && $('own-pool').checked;
         const v = inp ? inp.value : '';
-        if (v.trim()) App.socket.emit('askCustom', { text: v, toPool });
+        if (v.trim()) emit('askCustom', { text: v, toPool });
         else toast('Write a question first.');
       }
     };
@@ -242,7 +255,7 @@ function bindPanel() {
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        if (ta.value.trim()) App.socket.emit('submitAnswer', ta.value);
+        if (ta.value.trim()) emit('submitAnswer', ta.value);
       }
     });
   }
@@ -254,7 +267,7 @@ function bindPanel() {
         e.preventDefault();
         if (own.value.trim()) {
           const toPool = $('own-pool') && $('own-pool').checked;
-          App.socket.emit('askCustom', { text: own.value, toPool });
+          emit('askCustom', { text: own.value, toPool });
         }
       }
     });

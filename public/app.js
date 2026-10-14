@@ -32,6 +32,30 @@ function esc(s) {
   }[c]));
 }
 
+/* every game action goes through here so a dead socket is LOUD, not silent */
+function emit(event, payload) {
+  if (!App.socket || !App.socket.connected) {
+    toast('No connection to the game server - waiting to reconnect...');
+    setNetStatus('offline');
+    return false;
+  }
+  emit(event, payload);
+  return true;
+}
+
+function setNetStatus(state) {
+  const el = $('net-status');
+  if (!el) return;
+  el.classList.toggle('hidden', state === 'ok');
+  if (state === 'offline') {
+    el.querySelector('.net-text').textContent = 'Connection lost - reconnecting to the server...';
+    el.querySelector('.net-reload').classList.add('hidden');
+  } else if (state === 'dead') {
+    el.querySelector('.net-text').textContent = 'Could not reconnect. The game may have ended.';
+    el.querySelector('.net-reload').classList.remove('hidden');
+  }
+}
+
 function connectSocket(done) {
   if (location.protocol === 'https:' && SERVER_URL && !/^https:\/\//i.test(SERVER_URL)) {
     return done(null, 'Game server URL must use https:// when this page is served over https (browsers block mixed content).');
@@ -126,7 +150,7 @@ function doJoin() {
   showHomeError('');
   App.me.name = name;
   localStorage.setItem('askme.name', name);
-  App.socket.emit('join', { code, name, avatar: App.me.avatar });
+  emit('join', { code, name, avatar: App.me.avatar });
 }
 
 function doCreate() {
@@ -135,7 +159,7 @@ function doCreate() {
   showHomeError('');
   App.me.name = name;
   localStorage.setItem('askme.name', name);
-  App.socket.emit('join', { code: 'CREATE', name, avatar: App.me.avatar });
+  emit('join', { code: 'CREATE', name, avatar: App.me.avatar });
 }
 
 function showHomeError(msg) {
@@ -155,7 +179,7 @@ function renderLobby() {
     return `<div class="player">
       <div class="av">${esc(p.avatar)}</div>
       <div class="meta">
-        <span class="pname">${esc(p.name)}${isMe ? ' <span class="badge">you</span>' : ''}</span>
+        <span class="pname">${esc(p.name)}${isMe ? ' <span class="badge">you</span>' : ''}${p.connected === false ? ' <span class="badge warn">reconnecting\u2026</span>' : ''}</span>
         <span class="pscore">${p.ready ? 'Ready \u2713' : 'Picking categories\u2026'}</span>
       </div>
     </div>`;
@@ -204,10 +228,10 @@ function renderLobby() {
           <input type="checkbox" id="confirm-adult" style="accent-color:var(--accent)" ${me.confirmAdult ? 'checked' : ''} />
           I am 18 years or older</label>`;
         after.querySelector('input').onchange = (e) => {
-          App.socket.emit('lobbyOptions', { confirmAdult: e.target.checked });
+          emit('lobbyOptions', { confirmAdult: e.target.checked });
           if (!e.target.checked) {
             const fresh = myPlayer();
-            App.socket.emit('lobbyOptions', {
+            emit('lobbyOptions', {
               categories: (fresh ? fresh.categories : []).filter((c) => c !== 'adult'),
             });
           }
@@ -239,7 +263,7 @@ function renderCustomList(s) {
       <button class="chip-btn danger" data-rm="${q.id}" title="Remove">\u2715</button>
     </div>`).join('');
   list.querySelectorAll('[data-rm]').forEach((b) => {
-    b.onclick = () => App.socket.emit('removeCustom', b.dataset.rm);
+    b.onclick = () => emit('removeCustom', b.dataset.rm);
   });
 }
 
@@ -252,7 +276,7 @@ function toggleCategory(id) {
   }
   let cats = me.categories.includes(id) ? me.categories.filter((c) => c !== id) : [...me.categories, id];
   if (!cats.length) return toast('Pick at least one category.');
-  App.socket.emit('lobbyOptions', { categories: cats });
+  emit('lobbyOptions', { categories: cats });
 }
 
 /* ---------- socket routing ---------- */
@@ -287,7 +311,32 @@ function wireSocket() {
   });
 
   App.socket.on('system', ({ text }) => addLog(text));
-  App.socket.on('errorMsg', (msg) => toast(msg));
+  App.socket.on('errorMsg', (msg) => {
+    if (/Unable to reconnect|no longer connected|Could not rejoin/i.test(msg)) setNetStatus('dead');
+    toast(msg);
+  });
+
+  App.socket.on('connect', () => {
+    setNetStatus('ok');
+    if (App._wasConnected) {
+      const code = App.state && App.state.code;
+      if (code && App.me.name) {
+        App.socket.emit('rejoin', { code, name: App.me.name });
+      }
+    }
+    App._wasConnected = true;
+  });
+
+  App.socket.on('disconnect', () => {
+    setNetStatus('offline');
+    toast('Connection lost - reconnecting...');
+  });
+
+  App.socket.on('leftRoom', () => {
+    App.state = null;
+    App.log = [];
+    showScreen('home');
+  });
 }
 
 connectSocket((socket) => {
@@ -316,11 +365,11 @@ function bindUi() {
   $('join-code').addEventListener('keydown', (e) => e.key === 'Enter' && doJoin());
   $('name-input').addEventListener('keydown', (e) => e.key === 'Enter' && doJoin());
 
-  $('start-btn').onclick = () => App.socket.emit('startGame');
-  $('leave-room-btn').onclick = () => App.socket.emit('leave');
-  $('leave-final-btn').onclick = () => App.socket.emit('leave');
-  $('end-game-btn').onclick = () => App.socket.emit('endGame');
-  $('play-again-btn').onclick = () => App.socket.emit('playAgain');
+  $('start-btn').onclick = () => emit('startGame');
+  $('leave-room-btn').onclick = () => emit('leave');
+  $('leave-final-btn').onclick = () => emit('leave');
+  $('end-game-btn').onclick = () => emit('endGame');
+  $('play-again-btn').onclick = () => emit('playAgain');
 
   const bindAdd = (inputId, btnId) => {
     const inp = $(inputId);
@@ -328,7 +377,7 @@ function bindUi() {
     const send = () => {
       const v = inp.value.trim();
       if (!v) return toast('Write a question first.');
-      App.socket.emit('addCustom', v);
+      emit('addCustom', v);
       inp.value = '';
     };
     btn.onclick = send;

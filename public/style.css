@@ -183,6 +183,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent2); }
 .player .pname { font-weight: 700; }
 .player .pscore { color: var(--muted); font-size: 0.85rem; }
 .player .badge { font-size: 0.7rem; background: var(--accent2); padding: 2px 8px; border-radius: 999px; }
+.player .badge.warn { background: var(--reject); color: #3a2a00; }
 
 /* categories */
 .cat {
@@ -312,6 +313,33 @@ input:focus, textarea:focus { outline: 2px solid var(--accent2); }
 .hitem .tag.good { color: var(--like); }
 .hitem .tag.bad { color: var(--dislike); }
 .hitem .tag.rej { color: var(--reject); }
+
+/* connection banner */
+.net-status {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--reject);
+  color: #3a2a00;
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  margin: -16px -16px 12px;
+}
+.net-reload {
+  background: #3a2a00;
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
 
 /* toast */
 @keyframes toast-in {

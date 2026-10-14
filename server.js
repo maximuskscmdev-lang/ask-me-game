@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const Room = require('./rooms');
 
 const PORT = process.env.PORT || 3000;
+const RECONNECT_GRACE_MS = 60000;
 
 const app = express();
 const server = http.createServer(app);
@@ -16,6 +17,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const rooms = new Map();
 const bySocket = new Map();
+const pendingLeaves = new Map(); // socketId -> { room, timer } : dropped, still reclaimable
 
 function makeCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -26,11 +28,48 @@ function makeCode() {
   return code;
 }
 
-function where(room) {
-  return { code: room.code, players: room.playerList(), phase: room.phase };
+function detach(socketId, leftVoluntarily) {
+  const room = bySocket.get(socketId);
+  const pend = pendingLeaves.get(socketId);
+  if (pend) {
+    clearTimeout(pend.timer);
+    pendingLeaves.delete(socketId);
+  }
+  bySocket.delete(socketId);
+  if (!room) return;
+  const p = room.player(socketId);
+  room.leave(socketId);
+  if (room.players.length) {
+    if (leftVoluntarily && p) room.emitToBoth('system', { text: `${p.name} left the game.` });
+    room.broadcast();
+  } else {
+    rooms.delete(room.code);
+  }
 }
 
 io.on('connection', (socket) => {
+  // socket.io may reuse the same id when the session survives a short blip
+  const reattachable = bySocket.get(socket.id);
+
+  const roomOf = () => {
+    const room = bySocket.get(socket.id);
+    if (!room) {
+      socket.emit('errorMsg', 'You are no longer connected to a game. Reload the page to rejoin.');
+      return null;
+    }
+    return room;
+  };
+  const withRoom = (fn) => (arg) => {
+    const room = roomOf();
+    if (!room) return;
+    try {
+      fn(room, arg);
+      room.broadcast();
+    } catch (e) {
+      socket.emit('errorMsg', e.message);
+    }
+  };
+
   socket.on('join', ({ code, name, avatar }) => {
     if (!code || !name) return socket.emit('errorMsg', 'Oops... Missing data.');
 
@@ -40,7 +79,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       bySocket.set(socket.id, room);
       room.join({ id: socket.id, name, avatar });
-      socket.emit('joined', where(room));
+      socket.emit('joined', room.wide());
       room.broadcast();
       return;
     }
@@ -56,12 +95,34 @@ io.on('connection', (socket) => {
     socket.join(room.code);
     bySocket.set(socket.id, room);
     room.join({ id: socket.id, name, avatar });
-    socket.emit('joined', where(room));
+    socket.emit('joined', room.wide());
+    room.broadcast();
+  });
+
+  // rejoin after a reconnect that got a new socket id
+  socket.on('rejoin', ({ code, name }) => {
+    for (const [oldId, pend] of pendingLeaves) {
+      const room = pend.room;
+      if (room.code !== String(code).toUpperCase()) continue;
+      const p = room.players.find((pl) => pl.name.toLowerCase() === String(name).toLowerCase());
+      if (!p) continue;
+      clearTimeout(pend.timer);
+      pendingLeaves.delete(oldId);
+      p.id = socket.id;
+      p.connected = true;
+      socket.join(room.code);
+      bySocket.set(socket.id, room);
+      bySocket.delete(oldId);
+      room.emitToBoth('system', { text: `${p.name} reconnected!` });
+      socket.emit('joined', room.wide());
       room.broadcast();
+      return;
+    }
+    socket.emit('errorMsg', 'Could not rejoin - the game may have ended. Reload the page to start fresh.');
   });
 
   socket.on('lobbyOptions', (opts) => {
-    const room = bySocket.get(socket.id);
+    const room = roomOf();
     if (!room) return;
     const p = room.player(socket.id);
     if (!p) return;
@@ -69,150 +130,77 @@ io.on('connection', (socket) => {
     if (Array.isArray(opts.categories)) {
       p.categories = [...new Set(opts.categories)].filter((c) => c !== 'adult' || p.confirmAdult);
     }
-      room.broadcast();
+    room.broadcast();
   });
 
-  socket.on('startGame', () => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.startGame();
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('chooseCategory', (category) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.chooseCategory(category);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('askCustom', ({ text, toPool }) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.askCustom(socket.id, text, !!toPool);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('questionRating', (s) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.questionRating(socket.id, s);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('rejectQuestion', () => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.rejectQuestion(socket.id);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('submitAnswer', (text) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.submitAnswer(socket.id, text);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('answerRating', (s) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.answerRating(socket.id, s);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('addCustom', (text) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.addCustom(socket.id, text);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
-
-  socket.on('removeCustom', (qid) => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    try {
-      room.removeCustom(socket.id, qid);
-      room.broadcast();
-    } catch (e) {
-      socket.emit('errorMsg', e.message);
-    }
-  });
+  socket.on('startGame', withRoom((room) => room.startGame()));
+  socket.on('chooseCategory', withRoom((room, c) => room.chooseCategory(c)));
+  socket.on('askCustom', withRoom((room, { text, toPool }) => room.askCustom(socket.id, text, !!toPool)));
+  socket.on('questionRating', withRoom((room, v) => room.questionRating(socket.id, v)));
+  socket.on('rejectQuestion', withRoom((room) => room.rejectQuestion(socket.id)));
+  socket.on('submitAnswer', withRoom((room, text) => room.submitAnswer(socket.id, text)));
+  socket.on('answerRating', withRoom((room, v) => room.answerRating(socket.id, v)));
+  socket.on('addCustom', withRoom((room, text) => room.addCustom(socket.id, text)));
+  socket.on('removeCustom', withRoom((room, qid) => room.removeCustom(socket.id, qid)));
 
   socket.on('playAgain', () => {
-    const room = bySocket.get(socket.id);
+    const room = roomOf();
     if (!room) return;
     room.playAgain();
     room.emitToBoth('system', { text: 'Back to the lobby! Pick categories and start again.' });
     room.broadcast();
   });
 
-  socket.on('endGame', () => {
-    const room = bySocket.get(socket.id);
-    if (!room) return;
-    room.endGame();
-    room.broadcast();
-  });
+  socket.on('endGame', withRoom((room) => room.endGame()));
 
   socket.on('leave', () => {
-    const room = bySocket.get(socket.id);
-    bySocket.delete(socket.id);
-    if (!room) return;
-    const p = room.player(socket.id);
-    room.leave(socket.id);
-    socket.leave(room.code);
-    if (p && room.players.length) {
-      room.emitToBoth("system", { text: `${p.name} left the game.` });
-    }
-    if (room.players.length) room.broadcast();
-    else rooms.delete(room.code);
+    detach(socket.id, true);
+    socket.emit('leftRoom');
   });
 
   socket.on('disconnect', () => {
     const room = bySocket.get(socket.id);
-    bySocket.delete(socket.id);
     if (!room) return;
     const p = room.player(socket.id);
-    room.leave(socket.id);
-    socket.leave(room.code);
-    if (p && room.players.length) {
-      room.emitToBoth("system", { text: `${p.name} disconnected.` });
+    if (!p) {
+      bySocket.delete(socket.id);
+      return;
     }
-    if (room.players.length) room.broadcast();
-    else rooms.delete(room.code);
+    if (pendingLeaves.has(socket.id)) return;
+    p.connected = false;
+    room.emitToBoth('system', { text: `${p.name} lost connection - reconnecting...` });
+    const timer = setTimeout(() => {
+      pendingLeaves.delete(socket.id);
+      const r = bySocket.get(socket.id);
+      if (r) {
+        r.leave(socket.id);
+        bySocket.delete(socket.id);
+        if (r.players.length) {
+          r.emitToBoth('system', { text: `${p.name} was disconnected.` });
+          r.broadcast();
+        } else {
+          rooms.delete(r.code);
+        }
+      }
+    }, RECONNECT_GRACE_MS);
+    pendingLeaves.set(socket.id, { room, timer });
+    room.broadcast();
   });
+
+  // handlers registered above; now (re)attach if this is a recovering socket
+  if (reattachable && reattachable.player(socket.id)) {
+    const pend = pendingLeaves.get(socket.id);
+    if (pend) {
+      clearTimeout(pend.timer);
+      pendingLeaves.delete(socket.id);
+    }
+    const p = reattachable.player(socket.id);
+    p.connected = true;
+    socket.join(reattachable.code);
+    reattachable.emitToBoth('system', { text: `${p.name} reconnected!` });
+    socket.emit('joined', reattachable.wide());
+    reattachable.broadcast();
+  }
 });
 
 server.listen(PORT, () => {
