@@ -142,6 +142,11 @@ function buildAvatarGrid() {
   });
 }
 
+function sendJoin(payload) {
+  if (App.socket && App.socket.connected) App.socket.emit('join', payload);
+  else if (App.socket) App.socket.once('connect', () => App.socket.emit('join', payload));
+}
+
 function doJoin() {
   const name = $('name-input').value.trim();
   const code = $('join-code').value.trim().toUpperCase();
@@ -150,7 +155,7 @@ function doJoin() {
   showHomeError('');
   App.me.name = name;
   localStorage.setItem('askme.name', name);
-  emit('join', { code, name, avatar: App.me.avatar });
+  sendJoin({ code, name, avatar: App.me.avatar });
 }
 
 function doCreate() {
@@ -159,7 +164,7 @@ function doCreate() {
   showHomeError('');
   App.me.name = name;
   localStorage.setItem('askme.name', name);
-  emit('join', { code: 'CREATE', name, avatar: App.me.avatar });
+  sendJoin({ code: 'CREATE', name, avatar: App.me.avatar });
 }
 
 function showHomeError(msg) {
