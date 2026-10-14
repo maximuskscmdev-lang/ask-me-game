@@ -4,4 +4,4 @@
  * is hosted separately (e.g. on Vercel) and the Socket.io server lives on Render/Railway/Fly.
  * Example: window.ASKME_SERVER_URL = 'https://ask-me-server.onrender.com';
  */
-window.ASKME_SERVER_URL = '';
+window.ASKME_SERVER_URL = 'https://ask-me-game-server.onrender.com';
